@@ -52,14 +52,14 @@ class FileScramble:
     def __init__(self, inputDir, outputDir):
         config = configparser.ConfigParser()
         config.read(CONFIG)
-        if inputDir:
+        if inputDir != "None":
             self._inputDir = inputDir
         else:
             self._inputDir = config["Directories"]["Input"]
-        if outputDir:
+        if outputDir != "None":
             self._outputDir = outputDir
         else:
-            self._outputDir = config["Directory"]["Output"]
+            self._outputDir = config["Directories"]["Output"]
         self._password = config["Encryption"]["Password"]
         self._salt = None
 
@@ -267,7 +267,10 @@ def main():
     if results.mode == SCRAMBLE:
         scrambler.scramble()
     if results.mode == UNSCRAMBLE:
-        scrambler.unscramble()
+        if results.input == "None" or results.output == "None":
+            print("Input and output must be specified when using unscramble.")
+        else:
+            scrambler.unscramble()
 
 
 if __name__ == "__main__":
