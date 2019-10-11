@@ -176,7 +176,6 @@ class FileScramble:
                 else:
                     newMapping.setdefault(hexdigest, relativePath)
 
-        # TODO removal list
         # remove deleted files
         for k in oldMapping.keys():
             if k not in newMapping:
@@ -187,6 +186,18 @@ class FileScramble:
             self._copyFiles(filesToCopy)
         self._writeMappingFile(newMapping)
 
+    def clean(self):
+        mapping = self._readMappingFile()
+        if len(mapping.keys()) == 0:
+            print("No mapping file. Skipping cleaning")
+            return
+
+        # scan for files not present in mapping file
+        for root, dirs, files in os.walk(self.getScrambleOutputDirectory(), topdown=False):
+            for name in files:
+                if name not in mapping:
+                    os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
+
 
 def main():
     parser = argparse.ArgumentParser(description="""
@@ -195,6 +206,7 @@ def main():
     """)
 
     parser.add_argument("mode", choices=["scramble", "unscramble"])
+    parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan output folder for files that should not be there")
     group = parser.add_argument_group("Folders")
     group.add_argument("-i", dest="input", help="Input folder")
     group.add_argument("-o", dest="output", help="Output folder")
@@ -202,6 +214,8 @@ def main():
     results = parser.parse_args()
 
     scrambler = FileScramble(str(results.input), str(results.output))
+    if results.clean:
+        scrambler.clean()
     if results.mode == "scramble":
         scrambler.scramble()
 
