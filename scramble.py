@@ -69,13 +69,6 @@ class FileScramble:
         self._password = config["Encryption"]["Password"]
         self._salt = None
 
-        if not os.path.exists(self.getScrambleOutputDirectory()):
-            try:
-                os.makedirs(self.getScrambleOutputDirectory())
-            except OSError:
-                # TODO
-                print("Couldn't create output directory")
-
     def getScrambleOutputDirectory(self):
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
 
@@ -165,6 +158,13 @@ class FileScramble:
                 self._changeTimestamps(src, dst)
 
     def scramble(self, verbose=False):
+        if not os.path.exists(self.getScrambleOutputDirectory()):
+            try:
+                os.makedirs(self.getScrambleOutputDirectory())
+            except OSError:
+                print("Couldn't create output directory")
+                sys.exit(3)
+
         scrambledMapping = self._readMappingFile(self._outputDir)
         reverseScrambledMapping = dict()
         for k, v in scrambledMapping.items():
