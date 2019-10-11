@@ -125,8 +125,9 @@ class FileScramble:
         json_v = [b64encode(x).decode("utf-8") for x in [self._salt, cipher.nonce, HEADER.encode("utf-8"), ciphertext, tag]]
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
-        with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
-            json.dump(mapping, mappingFile, indent=0)
+        if self._storeCopyOfMapping:
+            with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
+                json.dump(mapping, mappingFile, indent=0)
 
     def _copyFiles(self, files, totalsize=0, blocksize=16 * 1024):
         # files is a list of tuples (src, dst) as absolute path
