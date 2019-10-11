@@ -52,14 +52,17 @@ class FileScramble:
     def __init__(self, inputDir, outputDir):
         config = configparser.ConfigParser()
         config.read(CONFIG)
-        if inputDir != "None":
+        if inputDir:
             self._inputDir = inputDir
         else:
             self._inputDir = config["General"]["Input"]
-        if outputDir != "None":
+        if outputDir:
             self._outputDir = outputDir
         else:
             self._outputDir = config["General"]["Output"]
+        self._useSalt = False
+        if str(config["General"]["UseSalt"]).lower() == "yes":
+            self._useSalt = True
         self._storeCopyOfMapping = False
         if str(config["General"]["StoreCopyOfMapping"]).lower() == "yes":
             self._storeCopyOfMapping = True
@@ -126,7 +129,7 @@ class FileScramble:
         cipher.update(HEADER.encode("utf-8"))
         ciphertext, tag = cipher.encrypt_and_digest(bytes(json.dumps(mapping), "utf-8"))
         json_k = ["salt", "nonce", "header", "ciphertext", "tag"]
-        json_v = [b64encode(x).decode('utf-8') for x in [self._salt, cipher.nonce, HEADER.encode("utf-8"), ciphertext, tag]]
+        json_v = [b64encode(x).decode("utf-8") for x in [self._salt, cipher.nonce, HEADER.encode("utf-8"), ciphertext, tag]]
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
         with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
@@ -161,8 +164,11 @@ class FileScramble:
                                 pbar.update(len(buf))
                 self._changeTimestamps(src, dst)
 
-    def scramble(self):
+    def scramble(self, verbose=False):
         scrambledMapping = self._readMappingFile(self._outputDir)
+        reverseScrambledMapping = dict()
+        for k, v in scrambledMapping.items():
+            reverseScrambledMapping.setdefault(v["file"], {"hash": k, "salt": v["salt"]})
         clearTextMapping = dict()
         filesToCopy = list()
 
@@ -171,22 +177,42 @@ class FileScramble:
         for root, dirs, files in os.walk(self._inputDir, topdown=False):
             for name in files:
                 relativePath = os.path.relpath(os.path.join(root, name), self._inputDir)
-                hexdigest = hashlib.sha256(bytes(relativePath, "utf-8")).hexdigest()
+
+                salt = b""
+                if self._useSalt:
+                    if relativePath in reverseScrambledMapping:
+                        salt = b64decode(reverseScrambledMapping[relativePath]["salt"])
+
+                if self._useSalt and salt == b"":
+                    salt = get_random_bytes(16)
+
+                hexdigest = hashlib.sha256(bytes(relativePath, "utf-8") + salt).hexdigest()
 
                 clearTextFile = os.path.join(root, name)
                 scrambledFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
 
-                oldFileStats = None
-                if hexdigest not in scrambledMapping:
+                skipCopy = False
+                if relativePath in reverseScrambledMapping and hexdigest != reverseScrambledMapping.get(relativePath)["hash"]:
+                    # salt turned off or on
+                    fileToRename = os.path.join(self.getScrambleOutputDirectory(), reverseScrambledMapping.get(relativePath)["hash"])
+                    if os.path.exists(fileToRename):
+                        os.rename(fileToRename, scrambledFile)
+                        if verbose:
+                            print("Renamed {old} to {new}".format(old=fileToRename, new=scrambledFile))
+                        skipCopy = True
+
+                if not skipCopy and hexdigest not in scrambledMapping:
                     # copy files that are not present
                     filesToCopy.append((clearTextFile, scrambledFile))
                     totalSizeToCopy += os.stat(clearTextFile).st_size
-                elif os.path.exists(clearTextFile) and os.path.isfile(clearTextFile):
+                else:
                     # check if files are the same size and have the same modification time
-                    newFileStats = os.stat(clearTextFile)
-                    oldFileStats = os.stat(scrambledFile)
-                if hexdigest in scrambledMapping and (not oldFileStats or (newFileStats.st_size != oldFileStats.st_size) or (newFileStats.st_mtime != oldFileStats.st_mtime)):
-                    filesToCopy.append((clearTextFile, scrambledFile))
+                    scrambledFileStats = os.stat(scrambledFile)
+                    clearTextFileStats = os.stat(clearTextFile)
+                    if hexdigest in scrambledMapping and (not clearTextFileStats
+                                                          or (scrambledFileStats.st_size != clearTextFileStats.st_size)
+                                                          or (scrambledFileStats.st_mtime != clearTextFileStats.st_mtime)):
+                        filesToCopy.append((clearTextFile, scrambledFile))
 
                 # add files to mapping
                 if hexdigest in clearTextMapping:
@@ -195,13 +221,16 @@ class FileScramble:
                     collision = clearTextMapping.get(hexdigest)
                     print("sha256 collision! {collisionFile} generates same value as {file}: {hash}".format(collisionFile=collision, file=relativePath, hash=hexdigest))
                 else:
-                    clearTextMapping.setdefault(hexdigest, relativePath)
+                    clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
 
         # remove deleted files
         for k in scrambledMapping.keys():
             if k not in clearTextMapping:
-                print("removing " + k)
-                os.remove(os.path.join(self.getScrambleOutputDirectory(), k))
+                fileToRemove = os.path.join(self.getScrambleOutputDirectory(), k)
+                if os.path.exists(fileToRemove):
+                    if verbose:
+                        print("removing " + k)
+                    os.remove(fileToRemove)
 
         if len(filesToCopy) > 0:
             self._copyFiles(filesToCopy)
@@ -239,7 +268,8 @@ class FileScramble:
 
         filesToCopy = list()
         totalSize = 0
-        for hashedName, clearName in mapping.items():
+        for hashedName, clearNameDict in mapping.items():
+            clearName = clearNameDict["file"]
             hashedFile = os.path.join(self.getScrambleInputDirectory(), hashedName)
             if not os.path.exists(hashedFile):
                 print("File {hash} || {file} is missing".format(hash=hashedName, file=clearName))
@@ -260,17 +290,18 @@ def main():
 
     parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE])
     parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan output directory for files that should not be there")
+    parser.add_argument("--verbose", dest="verbose", action="store_true", default=False)
     group = parser.add_argument_group("Directories")
     group.add_argument("-i", dest="input", help="Input directory")
     group.add_argument("-o", dest="output", help="Output directory")
 
     results = parser.parse_args()
 
-    scrambler = FileScramble(str(results.input), str(results.output))
+    scrambler = FileScramble(results.input, results.output)
     if results.clean:
         scrambler.clean(results.mode)
     if results.mode == SCRAMBLE:
-        scrambler.scramble()
+        scrambler.scramble(results.verbose)
     if results.mode == UNSCRAMBLE:
         if results.input == "None" or results.output == "None":
             print("Input and output must be specified when using unscramble.")
