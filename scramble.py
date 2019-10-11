@@ -25,6 +25,7 @@ import os
 import json
 import configparser
 import tqdm
+import argparse
 
 import hashlib
 import scrypt
@@ -44,11 +45,17 @@ HEADER = "SCRAMBLE v1"
 
 
 class FileScramble:
-    def __init__(self):
+    def __init__(self, input, output):
         config = configparser.ConfigParser()
         config.read(CONFIG)
-        self._inputDir = config["Folders"]["Input"]
-        self._outputDir = config["Folders"]["Output"]
+        if input:
+            self._inputDir = input
+        else:
+            self._inputDir = config["Folders"]["Input"]
+        if output:
+            self._outputDir = output
+        else:
+            self._outputDir = config["Folders"]["Output"]
         self._password = config["Encryption"]["Password"]
         self._salt = None
 
@@ -182,8 +189,21 @@ class FileScramble:
 
 
 def main():
-    scrambler = FileScramble()
-    scrambler.scramble()
+    parser = argparse.ArgumentParser(description="""
+    Copy files from input to output directory and scramble file names.
+    When no input or output folder is specified, the respective one provided in the configuration file will be used. 
+    """)
+
+    parser.add_argument("mode", choices=["scramble", "unscramble"])
+    group = parser.add_argument_group("Folders")
+    group.add_argument("-i", dest="input", help="Input folder")
+    group.add_argument("-o", dest="output", help="Output folder")
+
+    results = parser.parse_args()
+
+    scrambler = FileScramble(str(results.input), str(results.output))
+    if results.mode == "scramble":
+        scrambler.scramble()
 
 
 if __name__ == "__main__":
