@@ -55,11 +55,14 @@ class FileScramble:
         if inputDir != "None":
             self._inputDir = inputDir
         else:
-            self._inputDir = config["Directories"]["Input"]
+            self._inputDir = config["General"]["Input"]
         if outputDir != "None":
             self._outputDir = outputDir
         else:
-            self._outputDir = config["Directories"]["Output"]
+            self._outputDir = config["General"]["Output"]
+        self._storeCopyOfMapping = False
+        if str(config["General"]["StoreCopyOfMapping"]).lower() == "yes":
+            self._storeCopyOfMapping = True
         self._password = config["Encryption"]["Password"]
         self._salt = None
 
@@ -126,6 +129,8 @@ class FileScramble:
         json_v = [b64encode(x).decode('utf-8') for x in [self._salt, cipher.nonce, HEADER.encode("utf-8"), ciphertext, tag]]
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
+        with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
+            json.dump(mapping, mappingFile, indent=0)
 
     def _copyFiles(self, files, totalsize=0, blocksize=16 * 1024):
         # files is a list of tuples (src, dst) as absolute path

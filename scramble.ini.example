@@ -1,6 +1,13 @@
-[Directories]
+[General]
 Input = F:\temp\test\in
 Output = F:\temp\test\out
+
+# Use salt when hashing file names
+# Possible values: {yes, no}
+UseSalt = yes
+
+# store copy of unencrypted mapping file in same directory as this ini?
+StoreCopyOfMapping = yes
 
 [Encryption]
 Password = secret
