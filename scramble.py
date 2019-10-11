@@ -128,6 +128,7 @@ class FileScramble:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
 
     def _copyFiles(self, files, totalsize=0, blocksize=16 * 1024):
+        # files is a list of tuples (src, dst) as absolute path
         # Partially taken from https://github.com/tqdm/tqdm/wiki/How-to-make-a-great-Progress-Bar
         # Preprocess the total files sizes
         sizecounter = totalsize
@@ -139,6 +140,13 @@ class FileScramble:
         with tqdm.tqdm(total=sizecounter, unit='B', unit_scale=True, unit_divisor=1024) as pbar:
             for src, dst in files:
                 with open(src, "rb") as fsrc:
+                    if not os.path.exists(os.path.dirname(dst)):
+                        try:
+                            os.makedirs(os.path.dirname(dst))
+                        except OSError as e:
+                            if e.errno != e.EEXIST:
+                                raise
+
                     with open(dst, "wb") as fdst:
                         buf = 1
                         while buf:
@@ -211,6 +219,32 @@ class FileScramble:
                 if name not in mapping:
                     os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
 
+    def unscramble(self):
+        mapping = self._readMappingFile(self._inputDir)
+        if len(mapping.keys()) == 0:
+            print("No mapping file. Can't continue.")
+            sys.exit(2)
+
+        if not os.path.exists(self._outputDir):
+            try:
+                os.makedirs(self._outputDir)
+            except OSError as e:
+                if e.errno != e.EEXIST:
+                    raise
+
+        filesToCopy = list()
+        totalSize = 0
+        for hashedName, clearName in mapping.items():
+            hashedFile = os.path.join(self.getScrambleInputDirectory(), hashedName)
+            if not os.path.exists(hashedFile):
+                print("File {hash} || {file} is missing".format(hash=hashedName, file=clearName))
+            else:
+                totalSize += os.stat(hashedFile).st_size
+                filesToCopy.append((hashedFile, os.path.join(self._outputDir, clearName)))
+
+        if len(filesToCopy) > 0:
+            self._copyFiles(filesToCopy, totalSize)
+
 
 def main():
     parser = argparse.ArgumentParser(description="""
@@ -232,6 +266,8 @@ def main():
         scrambler.clean(results.mode)
     if results.mode == SCRAMBLE:
         scrambler.scramble()
+    if results.mode == UNSCRAMBLE:
+        scrambler.unscramble()
 
 
 if __name__ == "__main__":
