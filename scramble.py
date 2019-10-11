@@ -157,7 +157,7 @@ class FileScramble:
                 self._changeTimestamps(src, dst)
 
     def scramble(self):
-        oldMapping = self._readMappingFile(self.getScrambleOutputDirectory())
+        oldMapping = self._readMappingFile(self._outputDir)
         newMapping = dict()
         filesToCopy = list()
 
@@ -205,9 +205,9 @@ class FileScramble:
     def clean(self, mode):
         mapping = dict()
         if mode == SCRAMBLE:
-            mapping = self._readMappingFile(self.getScrambleOutputDirectory())
+            mapping = self._readMappingFile(self._outputDir)
         elif mode == UNSCRAMBLE:
-            mapping = self._readMappingFile(self.getScrambleInputDirectory())
+            mapping = self._readMappingFile(self._inputDir)
 
         if len(mapping.keys()) == 0:
             print("No mapping file. Skipping cleaning")
