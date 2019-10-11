@@ -201,6 +201,22 @@ class FileScramble:
                             print("Renamed {old} to {new}".format(old=fileToRename, new=scrambledFile))
                         skipCopy = True
 
+                # add files to mapping
+                if hexdigest in clearTextMapping:
+                    collision = clearTextMapping.get(hexdigest)
+                    if self._useSalt:
+                        while hexdigest in clearTextMapping:
+                            salt = get_random_bytes(16)
+                            hexdigest = hashlib.sha256(bytes(relativePath, "utf-8") + salt).hexdigest()
+                        clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
+                        scrambledFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
+                        print(hexdigest)
+                    else:
+                        print("sha256 collision! Use salted hashes to prevent this from happening {collisionFile} generates same value as {file}: {hash}"
+                              .format(collisionFile=collision, file=relativePath, hash=hexdigest))
+                else:
+                    clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
+
                 if not skipCopy and hexdigest not in scrambledMapping:
                     # copy files that are not present
                     filesToCopy.append((clearTextFile, scrambledFile))
@@ -213,15 +229,6 @@ class FileScramble:
                                                           or (scrambledFileStats.st_size != clearTextFileStats.st_size)
                                                           or (scrambledFileStats.st_mtime != clearTextFileStats.st_mtime)):
                         filesToCopy.append((clearTextFile, scrambledFile))
-
-                # add files to mapping
-                if hexdigest in clearTextMapping:
-                    # TODO add log in case of collision
-                    # TODO add random salt to prevent collisions
-                    collision = clearTextMapping.get(hexdigest)
-                    print("sha256 collision! {collisionFile} generates same value as {file}: {hash}".format(collisionFile=collision, file=relativePath, hash=hexdigest))
-                else:
-                    clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
 
         # remove deleted files
         for k in scrambledMapping.keys():
