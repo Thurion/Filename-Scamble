@@ -22,6 +22,7 @@
 # scrypt; see https://bitbucket.org/mhallin/py-scrypt/src/default/README.rst for instructions
 
 import os
+import sys
 import json
 import configparser
 import tqdm
@@ -43,19 +44,22 @@ MAPPING_FILE = "mapping.json"
 CONFIG = "scramble.ini"
 HEADER = "SCRAMBLE v1"
 
+SCRAMBLE = "scramble"
+UNSCRAMBLE = "unscramble"
+
 
 class FileScramble:
-    def __init__(self, input, output):
+    def __init__(self, inputDir, outputDir):
         config = configparser.ConfigParser()
         config.read(CONFIG)
-        if input:
-            self._inputDir = input
+        if inputDir:
+            self._inputDir = inputDir
         else:
-            self._inputDir = config["Folders"]["Input"]
-        if output:
-            self._outputDir = output
+            self._inputDir = config["Directories"]["Input"]
+        if outputDir:
+            self._outputDir = outputDir
         else:
-            self._outputDir = config["Folders"]["Output"]
+            self._outputDir = config["Directory"]["Output"]
         self._password = config["Encryption"]["Password"]
         self._salt = None
 
@@ -64,10 +68,13 @@ class FileScramble:
                 os.makedirs(self.getScrambleOutputDirectory())
             except OSError:
                 # TODO
-                print("Couldn't create output folder")
+                print("Couldn't create output directory")
 
     def getScrambleOutputDirectory(self):
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
+
+    def getScrambleInputDirectory(self):
+        return os.path.join(self._inputDir, OUTPUT_SCRAMBLE)
 
     @staticmethod
     def _changeTimestamps(source, destination):
@@ -90,11 +97,11 @@ class FileScramble:
                 PyTime
             )
 
-    def _readMappingFile(self):
+    def _readMappingFile(self, directory):
         mapping = dict()
-        if os.path.exists(os.path.join(self._outputDir, MAPPING_FILE)):
+        if os.path.exists(os.path.join(directory, MAPPING_FILE)):
             try:
-                with open(os.path.join(self._outputDir, MAPPING_FILE), "r") as mappingFile:
+                with open(os.path.join(directory, MAPPING_FILE), "r") as mappingFile:
                     b64 = json.load(mappingFile)
                 json_k = ["salt", "nonce", "header", "ciphertext", "tag"]
                 jv = {k: b64decode(b64[k]) for k in json_k}
@@ -105,6 +112,7 @@ class FileScramble:
                 mapping = json.loads(cipher.decrypt_and_verify(jv['ciphertext'], jv['tag']))
             except (ValueError, KeyError):
                 print("Incorrect decryption")
+                sys.exit(2)
         return mapping
 
     def _writeMappingFile(self, mapping):
@@ -141,11 +149,11 @@ class FileScramble:
                 self._changeTimestamps(src, dst)
 
     def scramble(self):
-        oldMapping = self._readMappingFile()
+        oldMapping = self._readMappingFile(self.getScrambleOutputDirectory())
         newMapping = dict()
         filesToCopy = list()
 
-        # scan input folder, generate hashes and copy new files
+        # scan input directory, generate hashes and copy new files
         totalSizeToCopy = 0
         for root, dirs, files in os.walk(self._inputDir, topdown=False):
             for name in files:
@@ -186,8 +194,13 @@ class FileScramble:
             self._copyFiles(filesToCopy)
         self._writeMappingFile(newMapping)
 
-    def clean(self):
-        mapping = self._readMappingFile()
+    def clean(self, mode):
+        mapping = dict()
+        if mode == SCRAMBLE:
+            mapping = self._readMappingFile(self.getScrambleOutputDirectory())
+        elif mode == UNSCRAMBLE:
+            mapping = self._readMappingFile(self.getScrambleInputDirectory())
+
         if len(mapping.keys()) == 0:
             print("No mapping file. Skipping cleaning")
             return
@@ -202,21 +215,22 @@ class FileScramble:
 def main():
     parser = argparse.ArgumentParser(description="""
     Copy files from input to output directory and scramble file names.
-    When no input or output folder is specified, the respective one provided in the configuration file will be used. 
+    When no input or output directory is specified, the respective one provided in the configuration file will be used. 
+    Files are being overwritten without any warning!
     """)
 
-    parser.add_argument("mode", choices=["scramble", "unscramble"])
-    parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan output folder for files that should not be there")
-    group = parser.add_argument_group("Folders")
-    group.add_argument("-i", dest="input", help="Input folder")
-    group.add_argument("-o", dest="output", help="Output folder")
+    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE])
+    parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan output directory for files that should not be there")
+    group = parser.add_argument_group("Directories")
+    group.add_argument("-i", dest="input", help="Input directory")
+    group.add_argument("-o", dest="output", help="Output directory")
 
     results = parser.parse_args()
 
     scrambler = FileScramble(str(results.input), str(results.output))
     if results.clean:
-        scrambler.clean()
-    if results.mode == "scramble":
+        scrambler.clean(results.mode)
+    if results.mode == SCRAMBLE:
         scrambler.scramble()
 
 
