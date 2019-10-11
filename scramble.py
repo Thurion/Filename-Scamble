@@ -157,8 +157,8 @@ class FileScramble:
                 self._changeTimestamps(src, dst)
 
     def scramble(self):
-        oldMapping = self._readMappingFile(self._outputDir)
-        newMapping = dict()
+        scrambledMapping = self._readMappingFile(self._outputDir)
+        clearTextMapping = dict()
         filesToCopy = list()
 
         # scan input directory, generate hashes and copy new files
@@ -168,39 +168,39 @@ class FileScramble:
                 relativePath = os.path.relpath(os.path.join(root, name), self._inputDir)
                 hexdigest = hashlib.sha256(bytes(relativePath, "utf-8")).hexdigest()
 
-                newFile = os.path.join(root, name)
-                oldFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
+                clearTextFile = os.path.join(root, name)
+                scrambledFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
 
                 oldFileStats = None
-                if hexdigest not in oldMapping:
+                if hexdigest not in scrambledMapping:
                     # copy files that are not present
-                    filesToCopy.append((newFile, oldFile))
-                    totalSizeToCopy += os.stat(newFile).st_size
-                elif os.path.exists(newFile) and os.path.isfile(newFile):
+                    filesToCopy.append((clearTextFile, scrambledFile))
+                    totalSizeToCopy += os.stat(clearTextFile).st_size
+                elif os.path.exists(clearTextFile) and os.path.isfile(clearTextFile):
                     # check if files are the same size and have the same modification time
-                    newFileStats = os.stat(newFile)
-                    oldFileStats = os.stat(oldFile)
-                if hexdigest in oldMapping and (not oldFileStats or (newFileStats.st_size != oldFileStats.st_size) or (newFileStats.st_mtime != oldFileStats.st_mtime)):
-                    filesToCopy.append((newFile, oldFile))
+                    newFileStats = os.stat(clearTextFile)
+                    oldFileStats = os.stat(scrambledFile)
+                if hexdigest in scrambledMapping and (not oldFileStats or (newFileStats.st_size != oldFileStats.st_size) or (newFileStats.st_mtime != oldFileStats.st_mtime)):
+                    filesToCopy.append((clearTextFile, scrambledFile))
 
                 # add files to mapping
-                if hexdigest in newMapping:
+                if hexdigest in clearTextMapping:
                     # TODO add log in case of collision
                     # TODO add random salt to prevent collisions
-                    collision = newMapping.get(hexdigest)
+                    collision = clearTextMapping.get(hexdigest)
                     print("sha256 collision! {collisionFile} generates same value as {file}: {hash}".format(collisionFile=collision, file=relativePath, hash=hexdigest))
                 else:
-                    newMapping.setdefault(hexdigest, relativePath)
+                    clearTextMapping.setdefault(hexdigest, relativePath)
 
         # remove deleted files
-        for k in oldMapping.keys():
-            if k not in newMapping:
+        for k in scrambledMapping.keys():
+            if k not in clearTextMapping:
                 print("removing " + k)
                 os.remove(os.path.join(self.getScrambleOutputDirectory(), k))
 
         if len(filesToCopy) > 0:
             self._copyFiles(filesToCopy)
-        self._writeMappingFile(newMapping)
+        self._writeMappingFile(clearTextMapping)
 
     def clean(self, mode):
         mapping = dict()
