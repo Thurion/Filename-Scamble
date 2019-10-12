@@ -27,6 +27,7 @@ import json
 import configparser
 import tqdm
 import argparse
+import re
 
 import hashlib
 from Cryptodome.Cipher import AES
@@ -172,13 +173,17 @@ class FileScramble:
                                 pbar.update(len(buf))
                 self._changeTimestamps(src, dst)
 
-    def scramble(self, verbose=False):
+    def scramble(self, verbose=False, regex=None):
         if not os.path.exists(self.getScrambleOutputDirectory()):
             try:
                 os.makedirs(self.getScrambleOutputDirectory())
             except OSError:
                 print("Couldn't create output directory")
                 sys.exit(3)
+
+        pattern = None
+        if regex:
+            pattern = re.compile(regex)
 
         scrambledMapping = self._readMappingFile(self._outputDir)
         reverseScrambledMapping = dict()
@@ -192,6 +197,12 @@ class FileScramble:
         for root, dirs, files in os.walk(self._inputDir, topdown=False):
             for name in files:
                 relativePath = os.path.relpath(os.path.join(root, name), self._inputDir)
+
+                if pattern:
+                    if not pattern.search(relativePath):
+                        continue
+                    elif verbose:
+                        print("Scrambling match: " + relativePath)
 
                 salt = b""
                 if self._useSalt:
@@ -275,7 +286,7 @@ class FileScramble:
                 if name not in mapping:
                     os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
 
-    def unscramble(self):
+    def unscramble(self, verbose=False, regex=None):
         mapping = self._readMappingFile(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
@@ -288,10 +299,21 @@ class FileScramble:
                 if e.errno != e.EEXIST:
                     raise
 
+        pattern = None
+        if regex:
+            pattern = re.compile(regex)
+
         filesToCopy = list()
         totalSize = 0
         for hashedName, clearNameDict in mapping.items():
             clearName = clearNameDict["file"]
+
+            if pattern:
+                if not pattern.search(clearName):
+                    continue
+                elif verbose:
+                    print("Unscrambling match: " + clearName)
+
             hashedFile = os.path.join(self.getScrambleInputDirectory(), hashedName)
             if not os.path.exists(hashedFile):
                 print("File {hash} || {file} is missing".format(hash=hashedName, file=clearName))
@@ -311,8 +333,11 @@ def main():
     """)
 
     parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE])
-    parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan output directory for files that should not be there")
+    parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan scrambled directory for files that should not be there")
     parser.add_argument("--verbose", dest="verbose", action="store_true", default=False)
+    parser.add_argument("--regex", dest="regex", help="Add a regex to scramble or unscramble only the relative paths that match the expression. "
+                                                      "This will use Python regex syntax and call re.search(). "
+                                                      "See https://docs.python.org/3/library/re.html for more information.")
     group = parser.add_argument_group("Directories")
     group.add_argument("-i", dest="input", help="Input directory")
     group.add_argument("-o", dest="output", help="Output directory")
@@ -323,12 +348,12 @@ def main():
     if results.clean:
         scrambler.clean(results.mode)
     if results.mode == SCRAMBLE:
-        scrambler.scramble(results.verbose)
+        scrambler.scramble(verbose=results.verbose, regex=results.regex)
     if results.mode == UNSCRAMBLE:
         if results.input == "None" or results.output == "None":
             print("Input and output must be specified when using unscramble.")
         else:
-            scrambler.unscramble()
+            scrambler.unscramble(verbose=results.verbose, regex=results.regex)
 
 
 if __name__ == "__main__":
