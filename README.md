@@ -8,7 +8,7 @@ Be sure the following Python modules are installed:
 pycryptodomex
 tqdm
 pywin32 on windows
-scrypt
+scrypt (only when using Python < 3.7)
 ```
 See [scrypt readme](https://bitbucket.org/mhallin/py-scrypt/src/default/README.rst) for installation instructions.
 

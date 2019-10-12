@@ -19,7 +19,7 @@
 # pycryptodomex
 # tqdm
 # pywin32 on windows
-# scrypt; see https://bitbucket.org/mhallin/py-scrypt/src/default/README.rst for instructions
+# scrypt; only required if Python < 3.7; see https://bitbucket.org/mhallin/py-scrypt/src/default/README.rst for instructions
 
 import os
 import sys
@@ -29,7 +29,6 @@ import tqdm
 import argparse
 
 import hashlib
-import scrypt
 from Cryptodome.Cipher import AES
 from Cryptodome.Random import get_random_bytes
 from base64 import b64encode, b64decode
@@ -38,6 +37,14 @@ import platform
 if platform.system() == "Windows":
     import win32file
     import pywintypes
+
+
+def isAtMostPython36():
+    return sys.version_info[0] == 3 and sys.version_info[1] <= 6
+
+
+if isAtMostPython36():
+    import scrypt
 
 OUTPUT_SCRAMBLE = "scrambled"
 MAPPING_FILE = "mapping.json"
@@ -66,7 +73,7 @@ class FileScramble:
         self._storeCopyOfMapping = False
         if str(config["General"]["StoreCopyOfMapping"]).lower() == "yes":
             self._storeCopyOfMapping = True
-        self._password = config["Encryption"]["Password"]
+        self._password = bytes(config["Encryption"]["Password"], "utf-8")
         self._salt = None
 
     def getScrambleOutputDirectory(self):
@@ -96,6 +103,13 @@ class FileScramble:
                 PyTime
             )
 
+    @staticmethod
+    def generateScryptHash(password: bytes, salt: bytes, bufferLengnth: int = 16):
+        if isAtMostPython36():
+            return scrypt.hash(password, salt, buflen=bufferLengnth)
+        else:
+            return hashlib.scrypt(password, salt=salt, n=1 << 14, r=8, p=1, dklen=bufferLengnth)
+
     def _readMappingFile(self, directory):
         mapping = dict()
         if os.path.exists(os.path.join(directory, MAPPING_FILE)):
@@ -105,7 +119,7 @@ class FileScramble:
                 json_k = ["salt", "nonce", "header", "ciphertext", "tag"]
                 jv = {k: b64decode(b64[k]) for k in json_k}
                 self._salt = jv["salt"]
-                key = scrypt.hash(self._password, self._salt, buflen=16)
+                key = self.generateScryptHash(self._password, self._salt)
                 cipher = AES.new(key, AES.MODE_CCM, nonce=jv['nonce'])
                 cipher.update(jv['header'])
                 mapping = json.loads(cipher.decrypt_and_verify(jv['ciphertext'], jv['tag']))
@@ -117,7 +131,7 @@ class FileScramble:
     def _writeMappingFile(self, mapping):
         if not self._salt:
             self._salt = get_random_bytes(16)
-        key = scrypt.hash(self._password, self._salt, buflen=16)
+        key = self.generateScryptHash(self._password, self._salt)
         cipher = AES.new(key, AES.MODE_CCM)
         cipher.update(HEADER.encode("utf-8"))
         ciphertext, tag = cipher.encrypt_and_digest(bytes(json.dumps(mapping), "utf-8"))
