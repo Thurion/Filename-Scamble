@@ -28,6 +28,7 @@ import configparser
 import tqdm
 import argparse
 import re
+from typing import Dict, List, Tuple
 
 import hashlib
 from Cryptodome.Cipher import AES
@@ -57,7 +58,7 @@ UNSCRAMBLE = "unscramble"
 
 
 class FileScramble:
-    def __init__(self, inputDir, outputDir):
+    def __init__(self, inputDir: str, outputDir: str):
         config = configparser.ConfigParser()
         config.read(CONFIG)
         if inputDir:
@@ -77,14 +78,14 @@ class FileScramble:
         self._password = bytes(config["Encryption"]["Password"], "utf-8")
         self._salt = None
 
-    def getScrambleOutputDirectory(self):
+    def getScrambleOutputDirectory(self) -> str:
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
 
-    def getScrambleInputDirectory(self):
+    def getScrambleInputDirectory(self) -> str:
         return os.path.join(self._inputDir, OUTPUT_SCRAMBLE)
 
     @staticmethod
-    def _changeTimestamps(source, destination):
+    def _changeTimestamps(source: str, destination: str):
         stats = os.stat(source)
         os.utime(destination, (stats.st_atime, stats.st_mtime))
 
@@ -105,13 +106,13 @@ class FileScramble:
             )
 
     @staticmethod
-    def generateScryptHash(password: bytes, salt: bytes, bufferLengnth: int = 16):
+    def generateScryptHash(password: bytes, salt: bytes, bufferLengnth: int = 16) -> bytes:
         if isAtMostPython36():
             return scrypt.hash(password, salt, buflen=bufferLengnth)
         else:
             return hashlib.scrypt(password, salt=salt, n=1 << 14, r=8, p=1, dklen=bufferLengnth)
 
-    def _readMappingFile(self, directory):
+    def _readMappingFile(self, directory: str) -> Dict[str, Dict[str, str]]:
         mapping = dict()
         if os.path.exists(os.path.join(directory, MAPPING_FILE)):
             try:
@@ -121,15 +122,15 @@ class FileScramble:
                 jv = {k: b64decode(b64[k]) for k in json_k}
                 self._salt = jv["salt"]
                 key = self.generateScryptHash(self._password, self._salt)
-                cipher = AES.new(key, AES.MODE_CCM, nonce=jv['nonce'])
-                cipher.update(jv['header'])
-                mapping = json.loads(cipher.decrypt_and_verify(jv['ciphertext'], jv['tag']))
+                cipher = AES.new(key, AES.MODE_CCM, nonce=jv["nonce"])
+                cipher.update(jv["header"])
+                mapping = json.loads(cipher.decrypt_and_verify(jv["ciphertext"], jv["tag"]))
             except (ValueError, KeyError):
                 print("Incorrect decryption")
                 sys.exit(2)
         return mapping
 
-    def _writeMappingFile(self, mapping):
+    def _writeMappingFile(self, mapping: Dict[str, Dict[str, str]]):
         if not self._salt:
             self._salt = get_random_bytes(16)
         key = self.generateScryptHash(self._password, self._salt)
@@ -144,7 +145,7 @@ class FileScramble:
             with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
                 json.dump(mapping, mappingFile, indent=0)
 
-    def _copyFiles(self, files, totalsize=0, blocksize=16 * 1024):
+    def _copyFiles(self, files: List[Tuple[str, str]], totalsize: int = 0, blocksize: int = 16 * 1024):
         # files is a list of tuples (src, dst) as absolute path
         # Partially taken from https://github.com/tqdm/tqdm/wiki/How-to-make-a-great-Progress-Bar
         # Preprocess the total files sizes
@@ -173,7 +174,7 @@ class FileScramble:
                                 pbar.update(len(buf))
                 self._changeTimestamps(src, dst)
 
-    def scramble(self, verbose=False, regex=None):
+    def scramble(self, verbose: bool = False, regex: bool = None):
         if not os.path.exists(self.getScrambleOutputDirectory()):
             try:
                 os.makedirs(self.getScrambleOutputDirectory())
@@ -269,7 +270,7 @@ class FileScramble:
             self._copyFiles(filesToCopy)
         self._writeMappingFile(clearTextMapping)
 
-    def clean(self, mode):
+    def clean(self, mode:str):
         mapping = dict()
         if mode == SCRAMBLE:
             mapping = self._readMappingFile(self._outputDir)
@@ -286,7 +287,7 @@ class FileScramble:
                 if name not in mapping:
                     os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
 
-    def unscramble(self, verbose=False, regex=None):
+    def unscramble(self, verbose: bool = False, regex: bool = None):
         mapping = self._readMappingFile(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
