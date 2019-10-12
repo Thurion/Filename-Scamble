@@ -55,6 +55,7 @@ HEADER = "SCRAMBLE v1"
 
 SCRAMBLE = "scramble"
 UNSCRAMBLE = "unscramble"
+DECRYPT = "decrypt"
 
 
 class FileScramble:
@@ -143,7 +144,7 @@ class FileScramble:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
         if self._storeCopyOfMapping:
             with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
-                json.dump(mapping, mappingFile, indent=0)
+                json.dump(mapping, mappingFile, indent=2)
 
     def _copyFiles(self, files: List[Tuple[str, str]], totalsize: int = 0, blocksize: int = 16 * 1024):
         # files is a list of tuples (src, dst) as absolute path
@@ -174,13 +175,17 @@ class FileScramble:
                                 pbar.update(len(buf))
                 self._changeTimestamps(src, dst)
 
-    def scramble(self, verbose: bool = False, regex: bool = None):
-        if not os.path.exists(self.getScrambleOutputDirectory()):
+    @staticmethod
+    def createOutputDirectory(directory: str):
+        if not os.path.exists(directory):
             try:
-                os.makedirs(self.getScrambleOutputDirectory())
-            except OSError:
-                print("Couldn't create output directory")
-                sys.exit(3)
+                os.makedirs(directory)
+            except OSError as e:
+                if e.errno != e.EEXIST:
+                    raise
+
+    def scramble(self, verbose: bool = False, regex: bool = None):
+        self.createOutputDirectory(self.getScrambleOutputDirectory())
 
         pattern = None
         if regex:
@@ -293,12 +298,7 @@ class FileScramble:
             print("No mapping file. Can't continue.")
             sys.exit(2)
 
-        if not os.path.exists(self._outputDir):
-            try:
-                os.makedirs(self._outputDir)
-            except OSError as e:
-                if e.errno != e.EEXIST:
-                    raise
+        self.createOutputDirectory(self._outputDir)
 
         pattern = None
         if regex:
@@ -325,6 +325,15 @@ class FileScramble:
         if len(filesToCopy) > 0:
             self._copyFiles(filesToCopy, totalSize)
 
+    def decrypt(self):
+        mapping = self._readMappingFile(self._inputDir)
+        if len(mapping.keys()) == 0:
+            print("No mapping file. Can't continue.")
+            sys.exit(2)
+
+        self.createOutputDirectory(self._outputDir)
+        with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
+            json.dump(mapping, mappingFile, indent=2)
 
 def main():
     parser = argparse.ArgumentParser(description="""
@@ -333,7 +342,8 @@ def main():
     Files are being overwritten without any warning!
     """)
 
-    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE])
+    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE, DECRYPT], help=""""{scramble}" will scramble the file names; "{unscramble}" will unscramble the file names; 
+                        "{decrypt}" will only decrypt the mapping file.""".format(scramble=SCRAMBLE, unscramble=UNSCRAMBLE, decrypt=DECRYPT))
     parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan scrambled directory for files that should not be there")
     parser.add_argument("--verbose", dest="verbose", action="store_true", default=False)
     parser.add_argument("--regex", dest="regex", help="Add a regex to scramble or unscramble only the relative paths that match the expression. "
@@ -355,6 +365,8 @@ def main():
             print("Input and output must be specified when using unscramble.")
         else:
             scrambler.unscramble(verbose=results.verbose, regex=results.regex)
+    if results.mode == DECRYPT:
+        scrambler.decrypt()
 
 
 if __name__ == "__main__":
