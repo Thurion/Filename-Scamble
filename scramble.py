@@ -28,6 +28,7 @@ import configparser
 import tqdm
 import argparse
 import re
+import logging
 from typing import Dict, List, Tuple
 
 import hashlib
@@ -83,6 +84,10 @@ class FileScramble:
             self._storeCopyOfMapping = True
         self._password = bytes(config["Encryption"]["Password"], "utf-8")
         self._salt = None
+
+        if str(config["Logging"]["Enable"]).lower() == "yes":
+            logging.basicConfig(filename=str(config["Logging"]["File"]).lower(), filemode="a+", level=config["Logging"]["Level"],
+                                format="%(asctime)s %(module)s %(levelname)s: %(message)s")
 
     def getScrambleOutputDirectory(self) -> str:
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
@@ -181,16 +186,17 @@ class FileScramble:
                 self._changeTimestamps(src, dst)
 
     @staticmethod
-    def createOutputDirectory(directory: str):
+    def createDirectory(directory: str):
         if not os.path.exists(directory):
             try:
                 os.makedirs(directory)
             except OSError as e:
                 if e.errno != e.EEXIST:
+                    logging.error("Failed to create " + os.path.dirname(directory), exc_info=True)
                     raise
 
     def scramble(self, verbose: bool = False, regex: bool = None):
-        self.createOutputDirectory(self.getScrambleOutputDirectory())
+        self.createDirectory(self.getScrambleOutputDirectory())
 
         pattern = None
         if regex:
@@ -214,6 +220,7 @@ class FileScramble:
                         continue
                     elif verbose:
                         print("Scrambling match: " + relativePath)
+                    logging.debug("Scrambling match: " + relativePath)
 
                 salt = b""
                 if self._useSalt:
@@ -234,8 +241,10 @@ class FileScramble:
                     fileToRename = os.path.join(self.getScrambleOutputDirectory(), reverseScrambledMapping.get(relativePath)["hash"])
                     if os.path.exists(fileToRename):
                         os.rename(fileToRename, scrambledFile)
+                        text = "Renamed {old} to {new}".format(old=fileToRename, new=scrambledFile)
+                        logging.debug(text)
                         if verbose:
-                            print("Renamed {old} to {new}".format(old=fileToRename, new=scrambledFile))
+                            print(text)
                         skipCopy = True
 
                 # add files to mapping
@@ -272,15 +281,19 @@ class FileScramble:
             if k not in clearTextMapping:
                 fileToRemove = os.path.join(self.getScrambleOutputDirectory(), k)
                 if os.path.exists(fileToRemove):
+                    logging.debug("removing " + k)
                     if verbose:
                         print("removing " + k)
                     os.remove(fileToRemove)
 
         if len(filesToCopy) > 0:
             self._copyFiles(filesToCopy)
+        logging.info("Copied and scrambled {} files.".format(len(filesToCopy)))
+        if verbose:
+            print("Copied and scrambled {} files.".format(len(filesToCopy)))
         self._writeMappingFile(clearTextMapping)
 
-    def clean(self, mode:str):
+    def clean(self, mode: str):
         mapping = dict()
         if mode == SCRAMBLE:
             mapping = self._readMappingFile(self._outputDir)
@@ -303,7 +316,7 @@ class FileScramble:
             print("No mapping file. Can't continue.")
             sys.exit(2)
 
-        self.createOutputDirectory(self._outputDir)
+        self.createDirectory(self._outputDir)
 
         pattern = None
         if regex:
@@ -319,6 +332,7 @@ class FileScramble:
                     continue
                 elif verbose:
                     print("Unscrambling match: " + clearName)
+            logging.debug("Unscrambling match: " + clearName)
 
             hashedFile = os.path.join(self.getScrambleInputDirectory(), hashedName)
             if not os.path.exists(hashedFile):
@@ -336,7 +350,7 @@ class FileScramble:
             print("No mapping file. Can't continue.")
             sys.exit(2)
 
-        self.createOutputDirectory(self._outputDir)
+        self.createDirectory(self._outputDir)
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(mapping, mappingFile, indent=2)
 
@@ -362,18 +376,22 @@ def main():
 
     results = parser.parse_args()
 
-    scrambler = FileScramble(results.input, results.output, results.config)
-    if results.clean:
-        scrambler.clean(results.mode)
-    if results.mode == SCRAMBLE:
-        scrambler.scramble(verbose=results.verbose, regex=results.regex)
-    if results.mode == UNSCRAMBLE:
-        if results.input == "None" or results.output == "None":
-            print("Input and output must be specified when using unscramble.")
-        else:
-            scrambler.unscramble(verbose=results.verbose, regex=results.regex)
-    if results.mode == DECRYPT:
-        scrambler.decrypt()
+    try:
+        scrambler = FileScramble(results.input, results.output, results.config)
+        if results.clean:
+            scrambler.clean(results.mode)
+        if results.mode == SCRAMBLE:
+            scrambler.scramble(verbose=results.verbose, regex=results.regex)
+        if results.mode == UNSCRAMBLE:
+            if results.input == "None" or results.output == "None":
+                print("Input and output must be specified when using unscramble.")
+            else:
+                scrambler.unscramble(verbose=results.verbose, regex=results.regex)
+        if results.mode == DECRYPT:
+            scrambler.decrypt()
+    except:
+        logging.error("Unexpected error occurred.", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

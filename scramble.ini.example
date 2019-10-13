@@ -9,5 +9,14 @@ Use salt = yes
 # store copy of unencrypted mapping file in same directory as this ini?
 Store copy of mapping = yes
 
+[Logging]
+Enable = yes
+
+# Use an absolute path or a relative to the working directory
+File = log.log
+
+# Log levels are: CRITICAL, ERROR, WARNING, INFO, DEBUG, NOTSET
+Level = DEBUG
+
 [Encryption]
 Password = secret
