@@ -59,9 +59,14 @@ DECRYPT = "decrypt"
 
 
 class FileScramble:
-    def __init__(self, inputDir: str, outputDir: str):
+    def __init__(self, inputDir: str, outputDir: str, configPath: str = None):
         config = configparser.ConfigParser()
-        config.read(CONFIG)
+
+        self._configPath = CONFIG
+        if configPath:
+            self._configPath = configPath
+        config.read(self._configPath)
+
         if inputDir:
             self._inputDir = inputDir
         else:
@@ -143,7 +148,7 @@ class FileScramble:
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
         if self._storeCopyOfMapping:
-            with open(os.path.join(os.getcwd(), MAPPING_FILE), "w+") as mappingFile:
+            with open(os.path.join(os.path.dirname(os.path.abspath(self._configPath)), MAPPING_FILE), "w+") as mappingFile:
                 json.dump(mapping, mappingFile, indent=2)
 
     def _copyFiles(self, files: List[Tuple[str, str]], totalsize: int = 0, blocksize: int = 16 * 1024):
@@ -335,6 +340,7 @@ class FileScramble:
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(mapping, mappingFile, indent=2)
 
+
 def main():
     parser = argparse.ArgumentParser(description="""
     Copy files from input to output directory and scramble file names.
@@ -345,6 +351,7 @@ def main():
     parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE, DECRYPT], help=""""{scramble}" will scramble the file names; "{unscramble}" will unscramble the file names; 
                         "{decrypt}" will only decrypt the mapping file.""".format(scramble=SCRAMBLE, unscramble=UNSCRAMBLE, decrypt=DECRYPT))
     parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan scrambled directory for files that should not be there")
+    parser.add_argument("--config", dest="config", help="Specify path of the config file. If not specified, the current working dir will be used.")
     parser.add_argument("--verbose", dest="verbose", action="store_true", default=False)
     parser.add_argument("--regex", dest="regex", help="Add a regex to scramble or unscramble only the relative paths that match the expression. "
                                                       "This will use Python regex syntax and call re.search(). "
@@ -355,7 +362,7 @@ def main():
 
     results = parser.parse_args()
 
-    scrambler = FileScramble(results.input, results.output)
+    scrambler = FileScramble(results.input, results.output, results.config)
     if results.clean:
         scrambler.clean(results.mode)
     if results.mode == SCRAMBLE:
