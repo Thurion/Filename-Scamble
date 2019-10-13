@@ -76,10 +76,10 @@ class FileScramble:
         else:
             self._outputDir = config["General"]["Output"]
         self._useSalt = False
-        if str(config["General"]["UseSalt"]).lower() == "yes":
+        if str(config["General"]["Use salt"]).lower() == "yes":
             self._useSalt = True
         self._storeCopyOfMapping = False
-        if str(config["General"]["StoreCopyOfMapping"]).lower() == "yes":
+        if str(config["General"]["Store copy of mapping"]).lower() == "yes":
             self._storeCopyOfMapping = True
         self._password = bytes(config["Encryption"]["Password"], "utf-8")
         self._salt = None
