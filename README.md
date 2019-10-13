@@ -12,6 +12,9 @@ scrypt (only needed when using Python < 3.7)
 ```
 See [scrypt readme](https://bitbucket.org/mhallin/py-scrypt/src/default/README.rst) for installation instructions.
 
+When calling this program from another process, make sure the process waits for this program to finish execution 
+to avoid a problem like [this](https://github.com/tqdm/tqdm/issues/794).
+
 ## Usage
 ```
 usage: scramble.py [-h] [--clean] [--verbose] [--regex REGEX] [-i INPUT]
