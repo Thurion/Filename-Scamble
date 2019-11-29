@@ -9,6 +9,16 @@ Use salt = yes
 # store copy of unencrypted mapping file in same directory as this ini?
 Store copy of mapping = yes
 
+[External Program]
+# launch external program after scrambling files
+Launch program = no
+
+Program = C:\WINDOWS\system32\cmd.exe
+Parameters = /c echo "hello world"
+
+# timeout in seconds, 0 = no timeout
+Timeout = 3600
+
 [Logging]
 Enable = yes
 

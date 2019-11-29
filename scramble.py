@@ -29,6 +29,8 @@ import tqdm
 import argparse
 import re
 import logging
+import subprocess
+import shlex
 from typing import Dict, List, Tuple
 
 import hashlib
@@ -83,6 +85,16 @@ class FileScramble:
             self._storeCopyOfMapping = True
         self._password = bytes(config["Encryption"]["Password"], "utf-8")
         self._salt = None
+
+        self._external_program = False
+        if str(config["External Program"]["Launch program"]).lower() == "yes":
+            self._external_program = True
+        self._external_program_path = config["External Program"]["Program"]
+        self._external_program_params = shlex.split(config["External Program"]["Parameters"])
+        try:
+            self._external_program_timeout = int(config["External Program"]["Timeout"])
+        except ValueError:
+            self._external_program_timeout = 0
 
         if str(config["Logging"]["Enable"]).lower() == "yes":
             logging.basicConfig(filename=str(config["Logging"]["File"]), filemode="a+", level=config["Logging"]["Level"],
@@ -362,6 +374,24 @@ class FileScramble:
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(mapping, mappingFile, indent=2)
 
+    def launch_process(self):
+        if self._external_program:
+            try:
+                timeout = None
+                if self._external_program_timeout > 0:
+                    timeout = self._external_program_timeout
+                logging.info(f"Launching {self._external_program_path}")
+                logging.debug(f"Parameters used: {self._external_program_params}")
+                p = subprocess.run([self._external_program_path, *self._external_program_params], timeout=timeout, shell=False)
+                if p.returncode:
+                    logging.warning(f"External program returned error code {p.returncode}")
+                else:
+                    logging.info(f"External program finished without error")
+            except subprocess.TimeoutExpired:
+                logging.error(f"Timeout of {self._external_program_timeout} reached for external program", exc_info=True)
+            except:
+                logging.error("Failed to launch external program", exc_info=True)
+
 
 def main():
     parser = argparse.ArgumentParser(description="""
@@ -390,6 +420,7 @@ def main():
             scrambler.clean(results.mode)
         if results.mode == SCRAMBLE:
             scrambler.scramble(verbose=results.verbose, regex=results.regex)
+            scrambler.launch_process()
         if results.mode == UNSCRAMBLE:
             if results.input == "None" or results.output == "None":
                 print("Input and output must be specified when using unscramble.")
