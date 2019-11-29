@@ -96,9 +96,12 @@ class FileScramble:
         except ValueError:
             self._external_program_timeout = 0
 
-        if str(config["Logging"]["Enable"]).lower() == "yes":
+        if config["Logging"]["Enable"].lower() == "yes":
             logging.basicConfig(filename=str(config["Logging"]["File"]), filemode="a+", level=config["Logging"]["Level"],
                                 format="%(asctime)s %(module)s %(levelname)s: %(message)s")
+        self.debug = False
+        if config["Logging"]["Level"].lower() == "debug":
+            self.debug = True
 
     def getScrambleOutputDirectory(self) -> str:
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
@@ -200,14 +203,13 @@ class FileScramble:
                             pbar.update(len(buf))
             self._changeTimestamps(src, dst)
 
-    @staticmethod
-    def createDirectory(directory: str):
+    def createDirectory(self, directory: str):
         if not os.path.exists(directory):
             try:
                 os.makedirs(directory)
             except OSError as e:
                 if e.errno != e.EEXIST:
-                    logging.error("Failed to create " + os.path.dirname(directory), exc_info=True)
+                    logging.error("Failed to create " + os.path.dirname(directory), exc_info=self.debug)
                     raise
 
     def scramble(self, verbose: bool = False, regex: str = None):
@@ -388,9 +390,9 @@ class FileScramble:
                 else:
                     logging.info(f"External program finished without error")
             except subprocess.TimeoutExpired:
-                logging.error(f"Timeout of {self._external_program_timeout} reached for external program", exc_info=True)
+                logging.error(f"Timeout of {self._external_program_timeout} reached for external program", exc_info=self.debug)
             except:
-                logging.error("Failed to launch external program", exc_info=True)
+                logging.error("Failed to launch external program", exc_info=self.debug)
 
 
 def main():
@@ -429,7 +431,7 @@ def main():
         if results.mode == DECRYPT:
             scrambler.decrypt()
     except:
-        logging.error("Unexpected error occurred.", exc_info=True)
+        logging.error("Unexpected error occurred.", exc_info=scrambler.debug)
         raise
 
 
