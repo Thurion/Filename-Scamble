@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-  Copyright 2017 Sebastian Bauer
+  Copyright 2019 Sebastian Bauer
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -36,14 +36,13 @@ from Cryptodome.Cipher import AES
 from Cryptodome.Random import get_random_bytes
 from base64 import b64encode, b64decode
 
-import platform
-if platform.system() == "Windows":
+if sys.platform == "win32":
     import win32file
     import pywintypes
 
 
 def isAtMostPython36():
-    return sys.version_info[0] == 3 and sys.version_info[1] <= 6
+    return sys.version_info < (3, 7)
 
 
 if isAtMostPython36():
@@ -86,7 +85,7 @@ class FileScramble:
         self._salt = None
 
         if str(config["Logging"]["Enable"]).lower() == "yes":
-            logging.basicConfig(filename=str(config["Logging"]["File"]).lower(), filemode="a+", level=config["Logging"]["Level"],
+            logging.basicConfig(filename=str(config["Logging"]["File"]), filemode="a+", level=config["Logging"]["Level"],
                                 format="%(asctime)s %(module)s %(levelname)s: %(message)s")
 
     def getScrambleOutputDirectory(self) -> str:
@@ -100,7 +99,7 @@ class FileScramble:
         stats = os.stat(source)
         os.utime(destination, (stats.st_atime, stats.st_mtime))
 
-        if platform.system() == "Windows":
+        if sys.platform == "win32":
             handle = win32file.CreateFile(
                 destination,  # file path
                 win32file.GENERIC_WRITE,  # must opened with GENERIC_WRITE access
@@ -166,24 +165,28 @@ class FileScramble:
                 sizecounter += os.stat(src).st_size
 
         # Load tqdm with size counter instead of file counter
-        with tqdm.tqdm(total=sizecounter, unit='B', unit_scale=True, unit_divisor=1024) as pbar:
-            for src, dst in files:
-                with open(src, "rb") as fsrc:
-                    if not os.path.exists(os.path.dirname(dst)):
-                        try:
-                            os.makedirs(os.path.dirname(dst))
-                        except OSError as e:
-                            if e.errno != e.EEXIST:
-                                raise
+        try:
+            pbar = tqdm.tqdm(total=sizecounter, unit='B', unit_scale=True, unit_divisor=1024)
+        except AttributeError as ignore:
+            pbar = None
 
-                    with open(dst, "wb") as fdst:
-                        buf = 1
-                        while buf:
-                            buf = fsrc.read(blocksize)
-                            fdst.write(buf)
-                            if buf:
-                                pbar.update(len(buf))
-                self._changeTimestamps(src, dst)
+        for src, dst in files:
+            with open(src, "rb") as fsrc:
+                if not os.path.exists(os.path.dirname(dst)):
+                    try:
+                        os.makedirs(os.path.dirname(dst))
+                    except OSError as e:
+                        if e.errno != e.EEXIST:
+                            raise
+
+                with open(dst, "wb") as fdst:
+                    buf = 1
+                    while buf:
+                        buf = fsrc.read(blocksize)
+                        fdst.write(buf)
+                        if buf and pbar:
+                            pbar.update(len(buf))
+            self._changeTimestamps(src, dst)
 
     @staticmethod
     def createDirectory(directory: str):
@@ -195,7 +198,7 @@ class FileScramble:
                     logging.error("Failed to create " + os.path.dirname(directory), exc_info=True)
                     raise
 
-    def scramble(self, verbose: bool = False, regex: bool = None):
+    def scramble(self, verbose: bool = False, regex: str = None):
         self.createDirectory(self.getScrambleOutputDirectory())
 
         pattern = None
@@ -277,6 +280,8 @@ class FileScramble:
                         filesToCopy.append((clearTextFile, scrambledFile))
 
         # remove deleted files
+        files_removed = 0
+        files_skipped = 0
         for k in scrambledMapping.keys():
             if k not in clearTextMapping:
                 fileToRemove = os.path.join(self.getScrambleOutputDirectory(), k)
@@ -285,12 +290,15 @@ class FileScramble:
                     if verbose:
                         print("removing " + k)
                     os.remove(fileToRemove)
+                    files_removed += 1
+            else:
+                files_skipped += 1
 
         if len(filesToCopy) > 0:
             self._copyFiles(filesToCopy)
-        logging.info("Copied and scrambled {} files.".format(len(filesToCopy)))
+        logging.info(f"Copied and scrambled {len(filesToCopy)}, removed {files_removed}, and skipped {files_skipped} files.")
         if verbose:
-            print("Copied and scrambled {} files.".format(len(filesToCopy)))
+            print(f"Copied and scrambled {len(filesToCopy)}, removed {files_removed}, and skipped {files_skipped} files.")
         self._writeMappingFile(clearTextMapping)
 
     def clean(self, mode: str):
@@ -310,7 +318,7 @@ class FileScramble:
                 if name not in mapping:
                     os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
 
-    def unscramble(self, verbose: bool = False, regex: bool = None):
+    def unscramble(self, verbose: bool = False, regex: str = None):
         mapping = self._readMappingFile(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
