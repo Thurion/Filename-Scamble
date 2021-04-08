@@ -58,6 +58,7 @@ HEADER = "SCRAMBLE v1"
 SCRAMBLE = "scramble"
 UNSCRAMBLE = "unscramble"
 DECRYPT = "decrypt"
+CHANGE_PASSWORD = "passwd"
 
 
 class FileScramble:
@@ -396,6 +397,17 @@ class FileScramble:
             except:
                 logging.error("Failed to launch external program", exc_info=self.debug)
 
+    def passwd(self):
+        print("Please enter old password:")
+        #self._password = bytes(input(), "utf-8")
+        mapping = self._readMappingFile(self._inputDir)
+
+        print("Please enter new password:")
+        self._password = bytes(input(), "utf-8")
+        self._outputDir = self._inputDir
+        self._writeMappingFile(mapping)
+        print("Password changed. Please update your config file.")
+
 
 def main():
     parser = argparse.ArgumentParser(description="""
@@ -404,8 +416,8 @@ def main():
     Files are being overwritten without any warning!
     """)
 
-    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE, DECRYPT], help=""""{scramble}" will scramble the file names; "{unscramble}" will unscramble the file names; 
-                        "{decrypt}" will only decrypt the mapping file.""".format(scramble=SCRAMBLE, unscramble=UNSCRAMBLE, decrypt=DECRYPT))
+    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE, DECRYPT, CHANGE_PASSWORD], help=f""""{SCRAMBLE}" will scramble the file names; "{UNSCRAMBLE}" will unscramble the file names; 
+                        "{DECRYPT}" will only decrypt the mapping file; {CHANGE_PASSWORD} will change the password that is used to encrypt the mapping file (don't forget to update your config!).""")
     parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan scrambled directory for files that should not be there")
     parser.add_argument("--config", dest="config", help="Specify path of the config file. If not specified, the current working dir will be used.")
     parser.add_argument("--verbose", dest="verbose", action="store_true", default=False)
@@ -438,6 +450,12 @@ def main():
                 print("Please enter the password: ")
                 scrambler._password = bytes(input(), "utf-8")
                 scrambler.decrypt()
+        if results.mode == CHANGE_PASSWORD:
+            if results.input == "None":
+                print("Please specify where the mapping file is located using '-i <path>'")
+            else:
+                scrambler.passwd()
+
     except:
         if scrambler:
             logging.error("Unexpected error occurred.", exc_info=scrambler.debug)
