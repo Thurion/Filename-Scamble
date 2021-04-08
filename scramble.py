@@ -429,7 +429,12 @@ def main():
             else:
                 scrambler.unscramble(verbose=results.verbose, regex=results.regex)
         if results.mode == DECRYPT:
-            scrambler.decrypt()
+            if results.input == "None" or results.output == "None":
+                print("Input and output must be specified when using decrypt.")
+            else:
+                print("Please enter the password: ")
+                scrambler._password = bytes(input(), "utf-8")
+                scrambler.decrypt()
     except:
         logging.error("Unexpected error occurred.", exc_info=scrambler.debug)
         raise
