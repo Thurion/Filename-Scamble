@@ -64,9 +64,11 @@ class FileScramble:
     def __init__(self, inputDir: str, outputDir: str, configPath: str = None):
         config = configparser.ConfigParser()
 
-        self._configPath = CONFIG
+        self._configPath = os.path.join(os.getcwd(), CONFIG)
         if configPath:
             self._configPath = configPath
+        if not os.path.exists(self._configPath):
+            raise RuntimeError(f"No config file found at {self._configPath}")
         config.read(self._configPath)
 
         if inputDir:
@@ -416,6 +418,7 @@ def main():
 
     results = parser.parse_args()
 
+    scrambler = None
     try:
         scrambler = FileScramble(results.input, results.output, results.config)
         if results.clean:
@@ -436,7 +439,10 @@ def main():
                 scrambler._password = bytes(input(), "utf-8")
                 scrambler.decrypt()
     except:
-        logging.error("Unexpected error occurred.", exc_info=scrambler.debug)
+        if scrambler:
+            logging.error("Unexpected error occurred.", exc_info=scrambler.debug)
+        else:
+            print("Unexpected error occurred.")
         raise
 
 
