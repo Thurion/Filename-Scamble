@@ -197,3 +197,4 @@ dmypy.json
 scramble.ini
 mapping.json
 log.log
+venv/
