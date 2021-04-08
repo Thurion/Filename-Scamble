@@ -124,7 +124,7 @@ class FileScramble:
                 0,
                 0
             )
-            PyTime = pywintypes.Time(stats.st_ctime)
+            PyTime = pywintypes.Time(int(stats.st_ctime))
             win32file.SetFileTime(
                 handle,
                 PyTime
