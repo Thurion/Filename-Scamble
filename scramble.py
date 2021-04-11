@@ -75,35 +75,35 @@ class FileScramble:
         if inputDir:
             self._inputDir = inputDir
         else:
-            self._inputDir = config["General"]["Input"]
+            self._inputDir = config.get("General", "Input", raw=True)
         if outputDir:
             self._outputDir = outputDir
         else:
-            self._outputDir = config["General"]["Output"]
+            self._outputDir = config.get("General", "Output", raw=True)
         self._useSalt = False
-        if str(config["General"]["Use salt"]).lower() == "yes":
+        if config.getboolean("General", "Use salt"):
             self._useSalt = True
         self._storeCopyOfMapping = False
-        if str(config["General"]["Store copy of mapping"]).lower() == "yes":
+        if config.getboolean("General", "Store copy of mapping"):
             self._storeCopyOfMapping = True
-        self._password = bytes(config["Encryption"]["Password"], "utf-8")
+        self._password = bytes(config.get("Encryption", "Password", raw=True), "utf-8")
         self._salt = None
 
         self._external_program = False
-        if str(config["External Program"]["Launch program"]).lower() == "yes":
+        if config.getboolean("External Program", "Launch program"):
             self._external_program = True
-        self._external_program_path = config["External Program"]["Program"]
-        self._external_program_params = shlex.split(config["External Program"]["Parameters"])
+        self._external_program_path = config.get("External Program", "Program", raw=True)
+        self._external_program_params = shlex.split(config.get("External Program", "Parameters", raw=True))
         try:
-            self._external_program_timeout = int(config["External Program"]["Timeout"])
+            self._external_program_timeout = config.getint("External Program", "Timeout")
         except ValueError:
             self._external_program_timeout = 0
 
-        if config["Logging"]["Enable"].lower() == "yes":
-            logging.basicConfig(filename=str(config["Logging"]["File"]), filemode="a+", level=config["Logging"]["Level"],
+        if config.getboolean("Logging", "Enable"):
+            logging.basicConfig(filename=config.get("Logging", "File"), filemode="a+", level=config.get("Logging", "Level"),
                                 format="%(asctime)s %(module)s %(levelname)s: %(message)s")
         self.debug = False
-        if config["Logging"]["Level"].lower() == "debug":
+        if config.get("Logging", "Level").lower() == "debug":
             self.debug = True
 
     def getScrambleOutputDirectory(self) -> str:
