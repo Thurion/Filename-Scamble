@@ -64,23 +64,23 @@ CHANGE_PASSWORD = "passwd"
 
 
 class FileScramble:
-    def __init__(self, inputDir: str, outputDir: str, configPath: str = None):
+    def __init__(self, input_dir: str, output_dir: str, config_path: str = None):
         config = configparser.ConfigParser()
 
         self._configPath = os.path.join(os.getcwd(), CONFIG)
-        if configPath:
-            self._configPath = configPath
+        if config_path:
+            self._configPath = config_path
         if not os.path.exists(self._configPath):
             raise RuntimeError(f"No config file found at {self._configPath}")
         config.read(self._configPath)
 
         # General
-        if inputDir:
-            self._inputDir = inputDir
+        if input_dir:
+            self._inputDir = input_dir
         else:
             self._inputDir = config.get("General", "Input", raw=True)
-        if outputDir:
-            self._outputDir = outputDir
+        if output_dir:
+            self._outputDir = output_dir
         else:
             self._outputDir = config.get("General", "Output", raw=True)
         self._useSalt = False
@@ -115,14 +115,14 @@ class FileScramble:
         self._time_cost = config.getint("Encryption", "Time Cost")
         self._parallelism = config.getint("Encryption", "Parallelism")
 
-    def getScrambleOutputDirectory(self) -> str:
+    def get_scramble_output_directory(self) -> str:
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
 
-    def getScrambleInputDirectory(self) -> str:
+    def get_scramble_input_directory(self) -> str:
         return os.path.join(self._inputDir, OUTPUT_SCRAMBLE)
 
     @staticmethod
-    def _changeTimestamps(source: str, destination: str):
+    def _change_timestamps(source: str, destination: str):
         stats = os.stat(source)
         os.utime(destination, (stats.st_atime, stats.st_mtime))
 
@@ -143,15 +143,15 @@ class FileScramble:
             )
 
     @staticmethod
-    def generateScryptHash(password: bytes, salt: bytes, bufferLengnth: int = 16) -> bytes:
+    def generate_scrypt_hash(password: bytes, salt: bytes, bufferLengnth: int = 16) -> bytes:
         if isAtMostPython36():
             return scrypt.hash(password, salt, buflen=bufferLengnth)
         else:
             return hashlib.scrypt(password, salt=salt, n=1 << 14, r=8, p=1, dklen=bufferLengnth)
 
-    def _readMappingFile_v1_0(self, directory: str) -> Dict[str, Dict[str, str]]:
+    def _read_mapping_file_v1_0(self, directory: str) -> Dict[str, Dict[str, str]]:
         """
-        Deprecated. Use readMappingFile_v1_1 instead
+        Deprecated. Use read_mapping_file_v1_1 instead
         :param directory:
         :return:
         """
@@ -163,7 +163,7 @@ class FileScramble:
                 json_k = ["salt", "nonce", "header", "ciphertext", "tag"]
                 jv = {k: b64decode(b64[k]) for k in json_k}
                 self._salt = jv["salt"]
-                key = self.generateScryptHash(self._password.encode("utf-8"), self._salt)
+                key = self.generate_scrypt_hash(self._password.encode("utf-8"), self._salt)
                 cipher = AES.new(key, AES.MODE_CCM, nonce=jv["nonce"])
                 cipher.update(jv["header"])
                 mapping = json.loads(cipher.decrypt_and_verify(jv["ciphertext"], jv["tag"]))
@@ -172,7 +172,7 @@ class FileScramble:
                 sys.exit(2)
         return mapping
 
-    def _readMappingFile_v1_1(self, directory: str) -> Dict[str, Dict[str, str]]:
+    def _read_mapping_file_v1_1(self, directory: str) -> Dict[str, Dict[str, str]]:
         mapping = dict()
         if os.path.exists(os.path.join(directory, MAPPING_FILE)):
             try:
@@ -196,10 +196,10 @@ class FileScramble:
                 mapping = json.loads(cipher.decrypt_and_verify(jv["ciphertext"], jv["tag"]))
             except (ValueError, KeyError):
                 print("Trying encryption for version 1.0")
-                return self._readMappingFile_v1_0(directory)
+                return self._read_mapping_file_v1_0(directory)
         return mapping
 
-    def _writeMappingFile(self, mapping: Dict[str, Dict[str, str]]):
+    def _write_mapping_file(self, mapping: Dict[str, Dict[str, str]]):
         salt = os.urandom(16)
         key = argon2.low_level.hash_secret_raw(
             secret=self._password.encode("utf-8"),
@@ -230,18 +230,18 @@ class FileScramble:
             with open(os.path.join(os.path.dirname(os.path.abspath(self._configPath)), MAPPING_FILE), "w+") as mappingFile:
                 json.dump(mapping, mappingFile, indent=2)
 
-    def _copyFiles(self, files: List[Tuple[str, str]], totalsize: int = 0, blocksize: int = 16 * 1024):
+    def _copy_files(self, files: List[Tuple[str, str]], totalsize: int = 0, blocksize: int = 16 * 1024):
         # files is a list of tuples (src, dst) as absolute path
         # Partially taken from https://github.com/tqdm/tqdm/wiki/How-to-make-a-great-Progress-Bar
         # Preprocess the total files sizes
-        sizecounter = totalsize
-        if sizecounter <= 0:
+        size_counter = totalsize
+        if size_counter <= 0:
             for src, _ in files:
-                sizecounter += os.stat(src).st_size
+                size_counter += os.stat(src).st_size
 
         # Load tqdm with size counter instead of file counter
         try:
-            pbar = tqdm.tqdm(total=sizecounter, unit='B', unit_scale=True, unit_divisor=1024)
+            pbar = tqdm.tqdm(total=size_counter, unit='B', unit_scale=True, unit_divisor=1024)
         except AttributeError as ignore:
             pbar = None
 
@@ -261,9 +261,9 @@ class FileScramble:
                         fdst.write(buf)
                         if buf and pbar:
                             pbar.update(len(buf))
-            self._changeTimestamps(src, dst)
+            self._change_timestamps(src, dst)
 
-    def createDirectory(self, directory: str):
+    def create_directory(self, directory: str):
         if not os.path.exists(directory):
             try:
                 os.makedirs(directory)
@@ -273,166 +273,173 @@ class FileScramble:
                     raise
 
     def scramble(self, verbose: bool = False, regex: str = None):
-        self.createDirectory(self.getScrambleOutputDirectory())
+        self.create_directory(self.get_scramble_output_directory())
 
         pattern = None
         if regex:
             pattern = re.compile(regex)
 
-        scrambledMapping = self._readMappingFile_v1_1(self._outputDir)
-        reverseScrambledMapping = dict()
-        for k, v in scrambledMapping.items():
-            reverseScrambledMapping.setdefault(v["file"], {"hash": k, "salt": v["salt"]})
-        clearTextMapping = dict()
-        filesToCopy = list()
+        scrambled_mapping = self._read_mapping_file_v1_1(self._outputDir)
+        reverse_scrambled_mapping = dict()
+        for k, v in scrambled_mapping.items():
+            reverse_scrambled_mapping.setdefault(v["file"], {"hash": k, "salt": v["salt"]})
+        clear_text_mapping = dict()
+        files_to_copy = list()
 
         # scan input directory, generate hashes and copy new files
-        totalSizeToCopy = 0
+        total_size_to_copy = 0
         for root, dirs, files in os.walk(self._inputDir, topdown=False):
             for name in files:
-                relativePath = os.path.relpath(os.path.join(root, name), self._inputDir)
+                relative_path = os.path.relpath(os.path.join(root, name), self._inputDir)
 
                 if pattern:
-                    if not pattern.search(relativePath):
+                    if not pattern.search(relative_path):
                         continue
                     elif verbose:
-                        print("Scrambling match: " + relativePath)
-                    logging.debug("Scrambling match: " + relativePath)
+                        print("Scrambling match: " + relative_path)
+                    logging.debug("Scrambling match: " + relative_path)
 
                 salt = b""
                 if self._useSalt:
-                    if relativePath in reverseScrambledMapping:
-                        salt = b64decode(reverseScrambledMapping[relativePath]["salt"])
+                    if relative_path in reverse_scrambled_mapping:
+                        salt = b64decode(reverse_scrambled_mapping[relative_path]["salt"])
 
                 if self._useSalt and salt == b"":
                     salt = os.urandom(16)
 
-                hexdigest = hashlib.sha256(bytes(relativePath, "utf-8") + salt).hexdigest()
+                hexdigest = hashlib.sha256(bytes(relative_path, "utf-8") + salt).hexdigest()
 
-                clearTextFile = os.path.join(root, name)
-                scrambledFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
+                clear_text_file = os.path.join(root, name)
+                scrambled_file = os.path.join(self.get_scramble_output_directory(), hexdigest)
 
-                skipCopy = False
-                if relativePath in reverseScrambledMapping and hexdigest != reverseScrambledMapping.get(relativePath)["hash"]:
+                skip_copy = False
+                if relative_path in reverse_scrambled_mapping \
+                        and hexdigest != reverse_scrambled_mapping.get(relative_path)["hash"]:
                     # salt turned off or on
-                    fileToRename = os.path.join(self.getScrambleOutputDirectory(), reverseScrambledMapping.get(relativePath)["hash"])
-                    if os.path.exists(fileToRename):
-                        os.rename(fileToRename, scrambledFile)
-                        text = "Renamed {old} to {new}".format(old=fileToRename, new=scrambledFile)
+                    file_to_rename = os.path.join(self.get_scramble_output_directory(),
+                                                  reverse_scrambled_mapping.get(relative_path)["hash"])
+                    if os.path.exists(file_to_rename):
+                        os.rename(file_to_rename, scrambled_file)
+                        text = "Renamed {old} to {new}".format(old=file_to_rename, new=scrambled_file)
                         logging.debug(text)
                         if verbose:
                             print(text)
-                        skipCopy = True
+                        skip_copy = True
 
                 # add files to mapping
-                if hexdigest in clearTextMapping:
-                    collision = clearTextMapping.get(hexdigest)
+                if hexdigest in clear_text_mapping:
+                    collision = clear_text_mapping.get(hexdigest)
                     if self._useSalt:
-                        while hexdigest in clearTextMapping:
+                        while hexdigest in clear_text_mapping:
                             salt = os.urandom(16)
-                            hexdigest = hashlib.sha256(bytes(relativePath, "utf-8") + salt).hexdigest()
-                        clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
-                        scrambledFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
+                            hexdigest = hashlib.sha256(bytes(relative_path, "utf-8") + salt).hexdigest()
+                        clear_text_mapping.setdefault(hexdigest, {"file": relative_path,
+                                                                  "salt": b64encode(salt).decode("utf-8")})
+                        scrambled_file = os.path.join(self.get_scramble_output_directory(), hexdigest)
                         print(hexdigest)
                     else:
-                        print("sha256 collision! Use salted hashes to prevent this from happening {collisionFile} generates same value as {file}: {hash}"
-                              .format(collisionFile=collision, file=relativePath, hash=hexdigest))
+                        print("sha256 collision! Use salted hashes to prevent this from happening {collisionFile} "
+                              "generates same value as {file}: {hash}"
+                              .format(collisionFile=collision, file=relative_path, hash=hexdigest))
                 else:
-                    clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
+                    clear_text_mapping.setdefault(hexdigest, {"file": relative_path,
+                                                              "salt": b64encode(salt).decode("utf-8")})
 
-                if not skipCopy and hexdigest not in scrambledMapping:
+                if not skip_copy and hexdigest not in scrambled_mapping:
                     # copy files that are not present
-                    filesToCopy.append((clearTextFile, scrambledFile))
-                    totalSizeToCopy += os.stat(clearTextFile).st_size
+                    files_to_copy.append((clear_text_file, scrambled_file))
+                    total_size_to_copy += os.stat(clear_text_file).st_size
                 else:
                     # check if files are the same size and have the same modification time
-                    scrambledFileStats = os.stat(scrambledFile)
-                    clearTextFileStats = os.stat(clearTextFile)
-                    if hexdigest in scrambledMapping and (not clearTextFileStats
+                    scrambledFileStats = os.stat(scrambled_file)
+                    clearTextFileStats = os.stat(clear_text_file)
+                    if hexdigest in scrambled_mapping and (not clearTextFileStats
                                                           or (scrambledFileStats.st_size != clearTextFileStats.st_size)
                                                           or (scrambledFileStats.st_mtime != clearTextFileStats.st_mtime)):
-                        filesToCopy.append((clearTextFile, scrambledFile))
+                        files_to_copy.append((clear_text_file, scrambled_file))
 
         # remove deleted files
         files_removed = 0
         files_skipped = 0
-        for k in scrambledMapping.keys():
-            if k not in clearTextMapping:
-                fileToRemove = os.path.join(self.getScrambleOutputDirectory(), k)
-                if os.path.exists(fileToRemove):
+        for k in scrambled_mapping.keys():
+            if k not in clear_text_mapping:
+                file_to_remove = os.path.join(self.get_scramble_output_directory(), k)
+                if os.path.exists(file_to_remove):
                     logging.debug("removing " + k)
                     if verbose:
                         print("removing " + k)
-                    os.remove(fileToRemove)
+                    os.remove(file_to_remove)
                     files_removed += 1
             else:
                 files_skipped += 1
 
-        if len(filesToCopy) > 0:
-            self._copyFiles(filesToCopy)
-        logging.info(f"Copied and scrambled {len(filesToCopy)}, removed {files_removed}, and skipped {files_skipped} files.")
+        if len(files_to_copy) > 0:
+            self._copy_files(files_to_copy)
+        logging.info(f"Copied and scrambled {len(files_to_copy)}, removed {files_removed}, "
+                     f"and skipped {files_skipped} files.")
         if verbose:
-            print(f"Copied and scrambled {len(filesToCopy)}, removed {files_removed}, and skipped {files_skipped} files.")
-        self._writeMappingFile(clearTextMapping)
+            print(f"Copied and scrambled {len(files_to_copy)}, removed {files_removed}, "
+                  f"and skipped {files_skipped} files.")
+        self._write_mapping_file(clear_text_mapping)
 
     def clean(self, mode: str):
         mapping = dict()
         if mode == SCRAMBLE:
-            mapping = self._readMappingFile_v1_1(self._outputDir)
+            mapping = self._read_mapping_file_v1_1(self._outputDir)
         elif mode == UNSCRAMBLE:
-            mapping = self._readMappingFile_v1_1(self._inputDir)
+            mapping = self._read_mapping_file_v1_1(self._inputDir)
 
         if len(mapping.keys()) == 0:
             print("No mapping file. Skipping cleaning")
             return
 
         # scan for files not present in mapping file
-        for root, dirs, files in os.walk(self.getScrambleOutputDirectory(), topdown=False):
+        for root, dirs, files in os.walk(self.get_scramble_output_directory(), topdown=False):
             for name in files:
                 if name not in mapping:
-                    os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
+                    os.remove(os.path.join(self.get_scramble_output_directory(), name))
 
     def unscramble(self, verbose: bool = False, regex: str = None):
-        mapping = self._readMappingFile_v1_1(self._inputDir)
+        mapping = self._read_mapping_file_v1_1(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
             sys.exit(2)
 
-        self.createDirectory(self._outputDir)
+        self.create_directory(self._outputDir)
 
         pattern = None
         if regex:
             pattern = re.compile(regex)
 
-        filesToCopy = list()
-        totalSize = 0
+        files_to_copy = list()
+        total_size = 0
         for hashedName, clearNameDict in mapping.items():
-            clearName = clearNameDict["file"]
+            clear_name = clearNameDict["file"]
 
             if pattern:
-                if not pattern.search(clearName):
+                if not pattern.search(clear_name):
                     continue
                 elif verbose:
-                    print("Unscrambling match: " + clearName)
-            logging.debug("Unscrambling match: " + clearName)
+                    print("Unscrambling match: " + clear_name)
+            logging.debug("Unscrambling match: " + clear_name)
 
-            hashedFile = os.path.join(self.getScrambleInputDirectory(), hashedName)
-            if not os.path.exists(hashedFile):
-                print("File {hash} || {file} is missing".format(hash=hashedName, file=clearName))
+            hashed_file = os.path.join(self.get_scramble_input_directory(), hashedName)
+            if not os.path.exists(hashed_file):
+                print("File {hash} || {file} is missing".format(hash=hashedName, file=clear_name))
             else:
-                totalSize += os.stat(hashedFile).st_size
-                filesToCopy.append((hashedFile, os.path.join(self._outputDir, clearName)))
+                total_size += os.stat(hashed_file).st_size
+                files_to_copy.append((hashed_file, os.path.join(self._outputDir, clear_name)))
 
-        if len(filesToCopy) > 0:
-            self._copyFiles(filesToCopy, totalSize)
+        if len(files_to_copy) > 0:
+            self._copy_files(files_to_copy, total_size)
 
     def decrypt(self):
-        mapping = self._readMappingFile_v1_1(self._inputDir)
+        mapping = self._read_mapping_file_v1_1(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
             sys.exit(2)
 
-        self.createDirectory(self._outputDir)
+        self.create_directory(self._outputDir)
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(mapping, mappingFile, indent=2)
 
@@ -444,25 +451,26 @@ class FileScramble:
                     timeout = self._external_program_timeout
                 logging.info(f"Launching {self._external_program_path}")
                 logging.debug(f"Parameters used: {self._external_program_params}")
-                p = subprocess.run([self._external_program_path, *self._external_program_params], timeout=timeout, shell=False)
+                p = subprocess.run([self._external_program_path, *self._external_program_params],
+                                   timeout=timeout, shell=False)
                 if p.returncode:
                     logging.warning(f"External program returned error code {p.returncode}")
                 else:
                     logging.info(f"External program finished without error")
             except subprocess.TimeoutExpired:
-                logging.error(f"Timeout of {self._external_program_timeout} reached for external program", exc_info=self.debug)
+                logging.error(f"Timeout of {self._external_program_timeout} reached for external program",
+                              exc_info=self.debug)
             except:
                 logging.error("Failed to launch external program", exc_info=self.debug)
 
     def passwd(self):
         print("Please enter old password:")
-        #self._password = bytes(input(), "utf-8")
-        mapping = self._readMappingFile_v1_1(self._inputDir)
+        mapping = self._read_mapping_file_v1_1(self._inputDir)
 
         print("Please enter new password:")
         self._password = bytes(input(), "utf-8")
         self._outputDir = self._inputDir
-        self._writeMappingFile(mapping)
+        self._write_mapping_file(mapping)
         print("Password changed. Please update your config file.")
 
 
@@ -473,14 +481,18 @@ def main():
     Files are being overwritten without any warning!
     """)
 
-    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE, DECRYPT, CHANGE_PASSWORD], help=f""""{SCRAMBLE}" will scramble the file names; "{UNSCRAMBLE}" will unscramble the file names; 
+    parser.add_argument("mode", choices=[SCRAMBLE, UNSCRAMBLE, DECRYPT, CHANGE_PASSWORD],
+                        help=f""""{SCRAMBLE}" will scramble the file names; "{UNSCRAMBLE}" will unscramble the file names; 
                         "{DECRYPT}" will only decrypt the mapping file; {CHANGE_PASSWORD} will change the password that is used to encrypt the mapping file (don't forget to update your config!).""")
-    parser.add_argument("--clean", dest="clean", action="store_true", default=False, help="Scan scrambled directory for files that should not be there")
-    parser.add_argument("--config", dest="config", help="Specify path of the config file. If not specified, the current working dir will be used.")
+    parser.add_argument("--clean", dest="clean", action="store_true", default=False,
+                        help="Scan scrambled directory for files that should not be there")
+    parser.add_argument("--config", dest="config",
+                        help="Specify path of the config file. If not specified, the current working dir will be used.")
     parser.add_argument("--verbose", dest="verbose", action="store_true", default=False)
-    parser.add_argument("--regex", dest="regex", help="Add a regex to scramble or unscramble only the relative paths that match the expression. "
-                                                      "This will use Python regex syntax and call re.search(). "
-                                                      "See https://docs.python.org/3/library/re.html for more information.")
+    parser.add_argument("--regex", dest="regex",
+                        help="Add a regex to scramble or unscramble only the relative paths that match the expression. "
+                             "This will use Python regex syntax and call re.search(). "
+                             "See https://docs.python.org/3/library/re.html for more information.")
     group = parser.add_argument_group("Directories")
     group.add_argument("-i", dest="input", help="Input directory")
     group.add_argument("-o", dest="output", help="Output directory")
@@ -513,7 +525,7 @@ def main():
             else:
                 scrambler.passwd()
 
-    except:
+    except Exception as e:
         if scrambler:
             logging.error("Unexpected error occurred.", exc_info=scrambler.debug)
         else:
