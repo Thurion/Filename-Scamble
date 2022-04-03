@@ -19,8 +19,10 @@
 # pycryptodomex
 # tqdm
 # pywin32 on windows
+# argon2-cffi
 # scrypt; only required if Python < 3.7; see https://bitbucket.org/mhallin/py-scrypt/src/default/README.rst for instructions
 
+import base64
 import os
 import sys
 import json
@@ -33,9 +35,9 @@ import subprocess
 import shlex
 from typing import Dict, List, Tuple
 
+import argon2
 import hashlib
 from Cryptodome.Cipher import AES
-from Cryptodome.Random import get_random_bytes
 from base64 import b64encode, b64decode
 
 if sys.platform == "win32":
@@ -53,7 +55,7 @@ if isAtMostPython36():
 OUTPUT_SCRAMBLE = "scrambled"
 MAPPING_FILE = "mapping.json"
 CONFIG = "scramble.ini"
-HEADER = "SCRAMBLE v1"
+HEADER = "SCRAMBLE v1.1"
 
 SCRAMBLE = "scramble"
 UNSCRAMBLE = "unscramble"
@@ -72,6 +74,7 @@ class FileScramble:
             raise RuntimeError(f"No config file found at {self._configPath}")
         config.read(self._configPath)
 
+        # General
         if inputDir:
             self._inputDir = inputDir
         else:
@@ -86,9 +89,8 @@ class FileScramble:
         self._storeCopyOfMapping = False
         if config.getboolean("General", "Store copy of mapping"):
             self._storeCopyOfMapping = True
-        self._password = bytes(config.get("Encryption", "Password", raw=True), "utf-8")
-        self._salt = None
 
+        # External Program
         self._external_program = False
         if config.getboolean("External Program", "Launch program"):
             self._external_program = True
@@ -99,12 +101,19 @@ class FileScramble:
         except ValueError:
             self._external_program_timeout = 0
 
+        # Logging
         if config.getboolean("Logging", "Enable"):
             logging.basicConfig(filename=config.get("Logging", "File"), filemode="a+", level=config.get("Logging", "Level"),
                                 format="%(asctime)s %(module)s %(levelname)s: %(message)s")
         self.debug = False
         if config.get("Logging", "Level").lower() == "debug":
             self.debug = True
+
+        # encryption
+        self._password = config.get("Encryption", "Password", raw=True)
+        self._memory_cost = config.getint("Encryption", "Memory Cost")
+        self._time_cost = config.getint("Encryption", "Time Cost")
+        self._parallelism = config.getint("Encryption", "Parallelism")
 
     def getScrambleOutputDirectory(self) -> str:
         return os.path.join(self._outputDir, OUTPUT_SCRAMBLE)
@@ -140,7 +149,12 @@ class FileScramble:
         else:
             return hashlib.scrypt(password, salt=salt, n=1 << 14, r=8, p=1, dklen=bufferLengnth)
 
-    def _readMappingFile(self, directory: str) -> Dict[str, Dict[str, str]]:
+    def _readMappingFile_v1_0(self, directory: str) -> Dict[str, Dict[str, str]]:
+        """
+        Deprecated. Use readMappingFile_v1_1 instead
+        :param directory:
+        :return:
+        """
         mapping = dict()
         if os.path.exists(os.path.join(directory, MAPPING_FILE)):
             try:
@@ -149,7 +163,7 @@ class FileScramble:
                 json_k = ["salt", "nonce", "header", "ciphertext", "tag"]
                 jv = {k: b64decode(b64[k]) for k in json_k}
                 self._salt = jv["salt"]
-                key = self.generateScryptHash(self._password, self._salt)
+                key = self.generateScryptHash(self._password.encode("utf-8"), self._salt)
                 cipher = AES.new(key, AES.MODE_CCM, nonce=jv["nonce"])
                 cipher.update(jv["header"])
                 mapping = json.loads(cipher.decrypt_and_verify(jv["ciphertext"], jv["tag"]))
@@ -158,15 +172,58 @@ class FileScramble:
                 sys.exit(2)
         return mapping
 
+    def _readMappingFile_v1_1(self, directory: str) -> Dict[str, Dict[str, str]]:
+        mapping = dict()
+        if os.path.exists(os.path.join(directory, MAPPING_FILE)):
+            try:
+                with open(os.path.join(directory, MAPPING_FILE), "r") as mappingFile:
+                    b64 = json.load(mappingFile)
+                json_k = ["a2_params", "nonce", "header", "ciphertext", "tag"]
+                jv = {k: b64decode(b64[k]) for k in json_k}
+                a2_params = json.loads(jv["a2_params"])
+                key = argon2.low_level.hash_secret_raw(
+                    secret=self._password.encode("utf-8"),
+                    version=a2_params["version"],
+                    memory_cost=a2_params["memory_cost"],
+                    time_cost=a2_params["time_cost"],
+                    parallelism=a2_params["parallelism"],
+                    type=argon2.Type.ID,
+                    hash_len=a2_params["hash_len"],
+                    salt=base64.b64decode(a2_params["salt"])
+                )
+                cipher = AES.new(key, AES.MODE_CCM, nonce=jv["nonce"])
+                cipher.update(jv["header"])
+                mapping = json.loads(cipher.decrypt_and_verify(jv["ciphertext"], jv["tag"]))
+            except (ValueError, KeyError):
+                print("Trying encryption for version 1.0")
+                return self._readMappingFile_v1_0(directory)
+        return mapping
+
     def _writeMappingFile(self, mapping: Dict[str, Dict[str, str]]):
-        if not self._salt:
-            self._salt = get_random_bytes(16)
-        key = self.generateScryptHash(self._password, self._salt)
+        salt = os.urandom(16)
+        key = argon2.low_level.hash_secret_raw(
+            secret=self._password.encode("utf-8"),
+            memory_cost=self._memory_cost,
+            time_cost=self._time_cost,
+            parallelism=self._parallelism,
+            type=argon2.Type.ID,
+            hash_len=32,
+            salt=salt
+        )
+        a2_params_json = json.dumps({
+            "version": argon2.low_level.ARGON2_VERSION,
+            "hash_len": 32,
+            "time_cost": self._time_cost,
+            "memory_cost": self._memory_cost,
+            "parallelism": self._parallelism,
+            "salt": base64.b64encode(salt).decode()
+        })
         cipher = AES.new(key, AES.MODE_CCM)
         cipher.update(HEADER.encode("utf-8"))
         ciphertext, tag = cipher.encrypt_and_digest(bytes(json.dumps(mapping), "utf-8"))
-        json_k = ["salt", "nonce", "header", "ciphertext", "tag"]
-        json_v = [b64encode(x).decode("utf-8") for x in [self._salt, cipher.nonce, HEADER.encode("utf-8"), ciphertext, tag]]
+        json_k = ["a2_params", "nonce", "header", "ciphertext", "tag"]
+        json_v = [b64encode(x).decode("utf-8") for x in [a2_params_json.encode("utf-8"),
+                                                         cipher.nonce, HEADER.encode("utf-8"), ciphertext, tag]]
         with open(os.path.join(self._outputDir, MAPPING_FILE), "w+") as mappingFile:
             json.dump(dict(zip(json_k, json_v)), mappingFile, indent=0)
         if self._storeCopyOfMapping:
@@ -222,7 +279,7 @@ class FileScramble:
         if regex:
             pattern = re.compile(regex)
 
-        scrambledMapping = self._readMappingFile(self._outputDir)
+        scrambledMapping = self._readMappingFile_v1_1(self._outputDir)
         reverseScrambledMapping = dict()
         for k, v in scrambledMapping.items():
             reverseScrambledMapping.setdefault(v["file"], {"hash": k, "salt": v["salt"]})
@@ -248,7 +305,7 @@ class FileScramble:
                         salt = b64decode(reverseScrambledMapping[relativePath]["salt"])
 
                 if self._useSalt and salt == b"":
-                    salt = get_random_bytes(16)
+                    salt = os.urandom(16)
 
                 hexdigest = hashlib.sha256(bytes(relativePath, "utf-8") + salt).hexdigest()
 
@@ -272,7 +329,7 @@ class FileScramble:
                     collision = clearTextMapping.get(hexdigest)
                     if self._useSalt:
                         while hexdigest in clearTextMapping:
-                            salt = get_random_bytes(16)
+                            salt = os.urandom(16)
                             hexdigest = hashlib.sha256(bytes(relativePath, "utf-8") + salt).hexdigest()
                         clearTextMapping.setdefault(hexdigest, {"file": relativePath, "salt": b64encode(salt).decode("utf-8")})
                         scrambledFile = os.path.join(self.getScrambleOutputDirectory(), hexdigest)
@@ -321,9 +378,9 @@ class FileScramble:
     def clean(self, mode: str):
         mapping = dict()
         if mode == SCRAMBLE:
-            mapping = self._readMappingFile(self._outputDir)
+            mapping = self._readMappingFile_v1_1(self._outputDir)
         elif mode == UNSCRAMBLE:
-            mapping = self._readMappingFile(self._inputDir)
+            mapping = self._readMappingFile_v1_1(self._inputDir)
 
         if len(mapping.keys()) == 0:
             print("No mapping file. Skipping cleaning")
@@ -336,7 +393,7 @@ class FileScramble:
                     os.remove(os.path.join(self.getScrambleOutputDirectory(), name))
 
     def unscramble(self, verbose: bool = False, regex: str = None):
-        mapping = self._readMappingFile(self._inputDir)
+        mapping = self._readMappingFile_v1_1(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
             sys.exit(2)
@@ -370,7 +427,7 @@ class FileScramble:
             self._copyFiles(filesToCopy, totalSize)
 
     def decrypt(self):
-        mapping = self._readMappingFile(self._inputDir)
+        mapping = self._readMappingFile_v1_1(self._inputDir)
         if len(mapping.keys()) == 0:
             print("No mapping file. Can't continue.")
             sys.exit(2)
@@ -400,7 +457,7 @@ class FileScramble:
     def passwd(self):
         print("Please enter old password:")
         #self._password = bytes(input(), "utf-8")
-        mapping = self._readMappingFile(self._inputDir)
+        mapping = self._readMappingFile_v1_1(self._inputDir)
 
         print("Please enter new password:")
         self._password = bytes(input(), "utf-8")

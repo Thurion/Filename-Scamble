@@ -30,3 +30,9 @@ Level = DEBUG
 
 [Encryption]
 Password = secret
+
+# Argon2id configuration
+# Memory Cost are in kibibytes
+Memory Cost = 98304
+Time Cost = 70
+Parallelism = 4
